@@ -32,7 +32,7 @@
 
 // An extra argument to the constructor for the parser, which is available
 // to all actions.
-%extra_context {Parse *pParse}
+%extra_context {pParse *Parse}
 
 // This code runs whenever there is a syntax error
 //
@@ -151,8 +151,8 @@ ecmd ::= SEMI.
 ecmd ::= cmdx SEMI.
 %ifndef SQLITE_OMIT_EXPLAIN
 ecmd ::= explain cmdx SEMI.       {NEVER-REDUCE}
-explain ::= EXPLAIN.              { pParse->explain = 1; }
-explain ::= EXPLAIN QUERY PLAN.   { pParse->explain = 2; }
+explain ::= EXPLAIN.              { pParse.explain = 1; }
+explain ::= EXPLAIN QUERY PLAN.   { pParse.explain = 2; }
 %endif  SQLITE_OMIT_EXPLAIN
 cmdx ::= cmd.           { sqlite3FinishCoding(pParse); }
 
