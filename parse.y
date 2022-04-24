@@ -107,7 +107,7 @@ type TrigEvent struct {
 
 type FrameBound struct {
     eType int
-    Expr *pExpr
+    pExpr *Expr
 }
 
 /*
@@ -116,7 +116,7 @@ type FrameBound struct {
 */
 func disableLookaside(pParse *Parse){
   // sqlite3 *db = pParse->db;
-  // pParse->disableLookaside++;
+    pParse.disableLookaside += 1
   // DisableLookaside;
 }
 
@@ -206,8 +206,8 @@ create_table_args ::= AS select(S). {
   sqlite3EndTable(pParse,0,0,0,S);
   sqlite3SelectDelete(pParse->db, S);
 }
-%type table_option_set {u32}
-%type table_option {u32}
+%type table_option_set {uint32}
+%type table_option {uint32}
 table_option_set(A) ::= .    {A = 0;}
 table_option_set(A) ::= table_option(A).
 table_option_set(A) ::= table_option_set(X) COMMA table_option(Y). {A = X|Y;}
@@ -343,7 +343,7 @@ signed ::= minus_num.
 // whitespace on either end of the text, but that can be removed in
 // post-processing, if needed.
 //
-%type scanpt {const char*}
+%type scanpt {string}
 scanpt(A) ::= . {
   assert( yyLookahead!=YYNOCODE );
   A = yyLookaheadToken.z;
@@ -410,7 +410,7 @@ autoinc(X) ::= AUTOINCR.  {X = 1;}
 %type refargs {int}
 refargs(A) ::= .                  { A = OE_None*0x0101; /* EV: R-19803-45884 */}
 refargs(A) ::= refargs(A) refarg(Y). { A = (A & ~Y.mask) | Y.value; }
-%type refarg {struct {int value; int mask;}}
+%type refarg {struct {value int; mask int;}}
 refarg(A) ::= MATCH nm.              { A.value = 0;     A.mask = 0x000000; }
 refarg(A) ::= ON INSERT refact.      { A.value = 0;     A.mask = 0x000000; }
 refarg(A) ::= ON DELETE refact(X).   { A.value = X;     A.mask = 0x0000ff; }
@@ -495,11 +495,11 @@ cmd ::= select(X).  {
   sqlite3SelectDelete(pParse->db, X);
 }
 
-%type select {Select*}
+%type select {*Select}
 %destructor select {sqlite3SelectDelete(pParse->db, $$);}
-%type selectnowith {Select*}
+%type selectnowith {*Select}
 %destructor selectnowith {sqlite3SelectDelete(pParse->db, $$);}
-%type oneselect {Select*}
+%type oneselect {*Select}
 %destructor oneselect {sqlite3SelectDelete(pParse->db, $$);}
 
 %include {
@@ -508,43 +508,43 @@ cmd ::= select(X).  {
   ** all elements in the list.  And make sure list length does not exceed
   ** SQLITE_LIMIT_COMPOUND_SELECT.
   */
-  static void parserDoubleLinkSelect(Parse *pParse, Select *p){
-    assert( p!=0 );
-    if( p->pPrior ){
-      Select *pNext = 0, *pLoop = p;
-      int mxSelect, cnt = 1;
-      while(1){
-        pLoop->pNext = pNext;
-        pLoop->selFlags |= SF_Compound;
-        pNext = pLoop;
-        pLoop = pLoop->pPrior;
-        if( pLoop==0 ) break;
-        cnt++;        
-        if( pLoop->pOrderBy || pLoop->pLimit ){
-          sqlite3ErrorMsg(pParse,"%s clause should come after %s not before",
-             pLoop->pOrderBy!=0 ? "ORDER BY" : "LIMIT",
-             sqlite3SelectOpName(pNext->op));
-          break;
-        }
-      }
-      if( (p->selFlags & SF_MultiValue)==0 && 
-        (mxSelect = pParse->db->aLimit[SQLITE_LIMIT_COMPOUND_SELECT])>0 &&
-        cnt>mxSelect
-      ){
-        sqlite3ErrorMsg(pParse, "too many terms in compound SELECT");
-      }
-    }
+  func parserDoubleLinkSelect(pParse *Parse, p *Select){
+    // assert( p!=0 );
+    // if( p->pPrior ){
+    //   Select *pNext = 0, *pLoop = p;
+    //   int mxSelect, cnt = 1;
+    //   while(1){
+    //     pLoop->pNext = pNext;
+    //     pLoop->selFlags |= SF_Compound;
+    //     pNext = pLoop;
+    //     pLoop = pLoop->pPrior;
+    //     if( pLoop==0 ) break;
+    //     cnt++;        
+    //     if( pLoop->pOrderBy || pLoop->pLimit ){
+    //       sqlite3ErrorMsg(pParse,"%s clause should come after %s not before",
+    //          pLoop->pOrderBy!=0 ? "ORDER BY" : "LIMIT",
+    //          sqlite3SelectOpName(pNext->op));
+    //       break;
+    //     }
+    //   }
+    //   if( (p->selFlags & SF_MultiValue)==0 && 
+    //     (mxSelect = pParse->db->aLimit[SQLITE_LIMIT_COMPOUND_SELECT])>0 &&
+    //     cnt>mxSelect
+    //   ){
+    //     sqlite3ErrorMsg(pParse, "too many terms in compound SELECT");
+    //   }
+    // }
   }
 
   /* Attach a With object describing the WITH clause to a Select
   ** object describing the query for which the WITH clause is a prefix.
   */
-  static Select *attachWithToSelect(Parse *pParse, Select *pSelect, With *pWith){
-    if( pSelect ){
-      pSelect->pWith = pWith;
-      parserDoubleLinkSelect(pParse, pSelect);
+  func attachWithToSelect(pParse *Parse, pSelect *Select, pWith *With) *Select{
+    if pSelect != nil {
+      pSelect.pWith = pWith;
+      // parserDoubleLinkSelect(pParse, pSelect);
     }else{
-      sqlite3WithDelete(pParse->db, pWith);
+      // sqlite3WithDelete(pParse->db, pWith);
     }
     return pSelect;
   }
@@ -614,7 +614,7 @@ oneselect(A) ::= SELECT distinct(D) selcollist(W) from(X) where_opt(Y)
 
 oneselect(A) ::= values(A).
 
-%type values {Select*}
+%type values {*Select}
 %destructor values {sqlite3SelectDelete(pParse->db, $$);}
 values(A) ::= VALUES LP nexprlist(X) RP. {
   A = sqlite3SelectNew(pParse,X,0,0,0,0,0,SF_Values,0);
@@ -645,9 +645,9 @@ distinct(A) ::= .           {A = 0;}
 // "SELECT * FROM ..." is encoded as a special expression with an
 // opcode of TK_ASTERISK.
 //
-%type selcollist {ExprList*}
+%type selcollist {*ExprList}
 %destructor selcollist {sqlite3ExprListDelete(pParse->db, $$);}
-%type sclp {ExprList*}
+%type sclp {*ExprList}
 %destructor sclp {sqlite3ExprListDelete(pParse->db, $$);}
 sclp(A) ::= selcollist(A) COMMA.
 sclp(A) ::= .                                {A = 0;}
@@ -676,11 +676,11 @@ as(X) ::= ids(X).
 as(X) ::= .            {X.n = 0; X.z = 0;}
 
 
-%type seltablist {SrcList*}
+%type seltablist {*SrcList}
 %destructor seltablist {sqlite3SrcListDelete(pParse->db, $$);}
-%type stl_prefix {SrcList*}
+%type stl_prefix {*SrcList}
 %destructor stl_prefix {sqlite3SrcListDelete(pParse->db, $$);}
-%type from {SrcList*}
+%type from {*SrcList}
 %destructor from {sqlite3SrcListDelete(pParse->db, $$);}
 
 // A complete FROM clause.
@@ -750,7 +750,7 @@ seltablist(A) ::= stl_prefix(A) nm(Y) dbnm(D) LP exprlist(E) RP as(Z) on_using(N
 dbnm(A) ::= .          {A.z=0; A.n=0;}
 dbnm(A) ::= DOT nm(X). {A = X;}
 
-%type fullname {SrcList*}
+%type fullname {*SrcList}
 %destructor fullname {sqlite3SrcListDelete(pParse->db, $$);}
 fullname(A) ::= nm(X).  {
   A = sqlite3SrcListAppend(pParse,0,&X,0);
@@ -761,7 +761,7 @@ fullname(A) ::= nm(X) DOT nm(Y). {
   if( IN_RENAME_OBJECT && A ) sqlite3RenameTokenMap(pParse, A->a[0].zName, &Y);
 }
 
-%type xfullname {SrcList*}
+%type xfullname {*SrcList}
 %destructor xfullname {sqlite3SrcListDelete(pParse->db, $$);}
 xfullname(A) ::= nm(X).  
    {A = sqlite3SrcListAppend(pParse,0,&X,0); /*A-overwrites-X*/}
@@ -825,14 +825,14 @@ indexed_opt(A) ::= indexed_by(A).
 indexed_by(A)  ::= INDEXED BY nm(X). {A = X;}
 indexed_by(A)  ::= NOT INDEXED.      {A.z=0; A.n=1;}
 
-%type orderby_opt {ExprList*}
+%type orderby_opt {*ExprList}
 %destructor orderby_opt {sqlite3ExprListDelete(pParse->db, $$);}
 
 // the sortlist non-terminal stores a list of expression where each
 // expression is optionally followed by ASC or DESC to indicate the
 // sort order.
 //
-%type sortlist {ExprList*}
+%type sortlist {*ExprList}
 %destructor sortlist {sqlite3ExprListDelete(pParse->db, $$);}
 
 orderby_opt(A) ::= .                          {A = 0;}
@@ -857,17 +857,17 @@ nulls(A) ::= NULLS FIRST.       {A = SQLITE_SO_ASC;}
 nulls(A) ::= NULLS LAST.        {A = SQLITE_SO_DESC;}
 nulls(A) ::= .                  {A = SQLITE_SO_UNDEFINED;}
 
-%type groupby_opt {ExprList*}
+%type groupby_opt {*ExprList}
 %destructor groupby_opt {sqlite3ExprListDelete(pParse->db, $$);}
 groupby_opt(A) ::= .                      {A = 0;}
 groupby_opt(A) ::= GROUP BY nexprlist(X). {A = X;}
 
-%type having_opt {Expr*}
+%type having_opt {*Expr}
 %destructor having_opt {sqlite3ExprDelete(pParse->db, $$);}
 having_opt(A) ::= .                {A = 0;}
 having_opt(A) ::= HAVING expr(X).  {A = X;}
 
-%type limit_opt {Expr*}
+%type limit_opt {*Expr}
 
 // The destructor for limit_opt will never fire in the current grammar.
 // The limit_opt non-terminal only occurs at the end of a single production
@@ -907,9 +907,9 @@ cmd ::= with DELETE FROM xfullname(X) indexed_opt(I) where_opt_ret(W). {
 }
 %endif
 
-%type where_opt {Expr*}
+%type where_opt {*Expr}
 %destructor where_opt {sqlite3ExprDelete(pParse->db, $$);}
-%type where_opt_ret {Expr*}
+%type where_opt_ret {*Expr}
 %destructor where_opt_ret {sqlite3ExprDelete(pParse->db, $$);}
 
 where_opt(A) ::= .                    {A = 0;}
@@ -950,7 +950,7 @@ cmd ::= with UPDATE orconf(R) xfullname(X) indexed_opt(I) SET setlist(Y) from(F)
 
 
 
-%type setlist {ExprList*}
+%type setlist {*ExprList}
 %destructor setlist {sqlite3ExprListDelete(pParse->db, $$);}
 
 setlist(A) ::= setlist(A) COMMA nm(X) EQ expr(Y). {
@@ -979,7 +979,7 @@ cmd ::= with insert_cmd(R) INTO xfullname(X) idlist_opt(F) DEFAULT VALUES return
   sqlite3Insert(pParse, X, 0, F, R, 0);
 }
 
-%type upsert {Upsert*}
+%type upsert {*Upsert}
 
 // Because upsert only occurs at the tip end of the INSERT rule for cmd,
 // there is never a case where the value of the upsert pointer will not
@@ -1005,9 +1005,9 @@ returning ::= .
 insert_cmd(A) ::= INSERT orconf(R).   {A = R;}
 insert_cmd(A) ::= REPLACE.            {A = OE_Replace;}
 
-%type idlist_opt {IdList*}
+%type idlist_opt {*IdList}
 %destructor idlist_opt {sqlite3IdListDelete(pParse->db, $$);}
-%type idlist {IdList*}
+%type idlist {*IdList}
 %destructor idlist {sqlite3IdListDelete(pParse->db, $$);}
 
 idlist_opt(A) ::= .                       {A = 0;}
@@ -1020,45 +1020,46 @@ idlist(A) ::= nm(Y).
 /////////////////////////// Expression Processing /////////////////////////////
 //
 
-%type expr {Expr*}
+%type expr {*Expr}
 %destructor expr {sqlite3ExprDelete(pParse->db, $$);}
-%type term {Expr*}
+%type term {*Expr}
 %destructor term {sqlite3ExprDelete(pParse->db, $$);}
 
 %include {
 
   /* Construct a new Expr object from a single token */
-  static Expr *tokenExpr(Parse *pParse, int op, Token t){
-    Expr *p = sqlite3DbMallocRawNN(pParse->db, sizeof(Expr)+t.n+1);
-    if( p ){
-      /* memset(p, 0, sizeof(Expr)); */
-      p->op = (u8)op;
-      p->affExpr = 0;
-      p->flags = EP_Leaf;
-      ExprClearVVAProperties(p);
-      /* p->iAgg = -1; // Not required */
-      p->pLeft = p->pRight = 0;
-      p->pAggInfo = 0;
-      memset(&p->x, 0, sizeof(p->x));
-      memset(&p->y, 0, sizeof(p->y));
-      p->op2 = 0;
-      p->iTable = 0;
-      p->iColumn = 0;
-      p->u.zToken = (char*)&p[1];
-      memcpy(p->u.zToken, t.z, t.n);
-      p->u.zToken[t.n] = 0;
-      p->w.iOfst = (int)(t.z - pParse->zTail);
-      if( sqlite3Isquote(p->u.zToken[0]) ){
-        sqlite3DequoteExpr(p);
-      }
-#if SQLITE_MAX_EXPR_DEPTH>0
-      p->nHeight = 1;
-#endif  
-      if( IN_RENAME_OBJECT ){
-        return (Expr*)sqlite3RenameTokenMap(pParse, (void*)p, &t);
-      }
-    }
-    return p;
+  func tokenExpr(pParse *Parse, op int, t Token) *Expr{
+    // Expr *p = sqlite3DbMallocRawNN(pParse->db, sizeof(Expr)+t.n+1);
+    // if( p ){
+    //   /* memset(p, 0, sizeof(Expr)); */
+    //   p->op = (u8)op;
+    //   p->affExpr = 0;
+    //   p->flags = EP_Leaf;
+    //   ExprClearVVAProperties(p);
+    //   /* p->iAgg = -1; // Not required */
+    //   p->pLeft = p->pRight = 0;
+    //   p->pAggInfo = 0;
+    //   memset(&p->x, 0, sizeof(p->x));
+    //   memset(&p->y, 0, sizeof(p->y));
+    //   p->op2 = 0;
+    //   p->iTable = 0;
+    //   p->iColumn = 0;
+    //   p->u.zToken = (char*)&p[1];
+    //   memcpy(p->u.zToken, t.z, t.n);
+    //   p->u.zToken[t.n] = 0;
+    //   p->w.iOfst = (int)(t.z - pParse->zTail);
+    //   if( sqlite3Isquote(p->u.zToken[0]) ){
+    //     sqlite3DequoteExpr(p);
+    //   }
+    // #if SQLITE_MAX_EXPR_DEPTH>0
+    //   p->nHeight = 1;
+    // #endif  
+    //   if( IN_RENAME_OBJECT ){
+    //     return (Expr*)sqlite3RenameTokenMap(pParse, (void*)p, &t);
+    //   }
+    // }
+    // return p;
+    return nil
   }
 
 }
@@ -1197,13 +1198,13 @@ expr(A) ::= expr(A) NOT NULL.    {A = sqlite3PExpr(pParse,TK_NOTNULL,A,0);}
 %include {
   /* A routine to convert a binary TK_IS or TK_ISNOT expression into a
   ** unary TK_ISNULL or TK_NOTNULL expression. */
-  static void binaryToUnaryIfNull(Parse *pParse, Expr *pY, Expr *pA, int op){
-    sqlite3 *db = pParse->db;
-    if( pA && pY && pY->op==TK_NULL && !IN_RENAME_OBJECT ){
-      pA->op = (u8)op;
-      sqlite3ExprDelete(db, pA->pRight);
-      pA->pRight = 0;
-    }
+  func binaryToUnaryIfNull(pParse *Parse, pY *Expr, pA *Expr, op int){
+    // sqlite3 *db = pParse->db;
+    // if( pA && pY && pY->op==TK_NULL && !IN_RENAME_OBJECT ){
+    //   pA->op = (u8)op;
+    //   sqlite3ExprDelete(db, pA->pRight);
+    //   pA->pRight = 0;
+    // }
   }
 }
 
@@ -1328,7 +1329,7 @@ expr(A) ::= CASE case_operand(X) case_exprlist(Y) case_else(Z) END. {
     sqlite3ExprDelete(pParse->db, Z);
   }
 }
-%type case_exprlist {ExprList*}
+%type case_exprlist {*ExprList}
 %destructor case_exprlist {sqlite3ExprListDelete(pParse->db, $$);}
 case_exprlist(A) ::= case_exprlist(A) WHEN expr(Y) THEN expr(Z). {
   A = sqlite3ExprListAppend(pParse,A, Y);
@@ -1338,18 +1339,18 @@ case_exprlist(A) ::= WHEN expr(Y) THEN expr(Z). {
   A = sqlite3ExprListAppend(pParse,0, Y);
   A = sqlite3ExprListAppend(pParse,A, Z);
 }
-%type case_else {Expr*}
+%type case_else {*Expr}
 %destructor case_else {sqlite3ExprDelete(pParse->db, $$);}
 case_else(A) ::=  ELSE expr(X).         {A = X;}
 case_else(A) ::=  .                     {A = 0;} 
-%type case_operand {Expr*}
+%type case_operand {*Expr}
 %destructor case_operand {sqlite3ExprDelete(pParse->db, $$);}
 case_operand(A) ::= expr(X).            {A = X; /*A-overwrites-X*/} 
 case_operand(A) ::= .                   {A = 0;} 
 
-%type exprlist {ExprList*}
+%type exprlist {*ExprList}
 %destructor exprlist {sqlite3ExprListDelete(pParse->db, $$);}
-%type nexprlist {ExprList*}
+%type nexprlist {*ExprList}
 %destructor nexprlist {sqlite3ExprListDelete(pParse->db, $$);}
 
 exprlist(A) ::= nexprlist(A).
@@ -1362,7 +1363,7 @@ nexprlist(A) ::= expr(Y).
 %ifndef SQLITE_OMIT_SUBQUERY
 /* A paren_exprlist is an optional expression list contained inside
 ** of parenthesis */
-%type paren_exprlist {ExprList*}
+%type paren_exprlist {*ExprList}
 %destructor paren_exprlist {sqlite3ExprListDelete(pParse->db, $$);}
 paren_exprlist(A) ::= .   {A = 0;}
 paren_exprlist(A) ::= LP exprlist(X) RP.  {A = X;}
@@ -1401,9 +1402,9 @@ uniqueflag(A) ::= .        {A = OE_None;}
 // (busted) old databases, we need to continue parsing them when loading
 // historical schemas.
 //
-%type eidlist {ExprList*}
+%type eidlist {*ExprList}
 %destructor eidlist {sqlite3ExprListDelete(pParse->db, $$);}
-%type eidlist_opt {ExprList*}
+%type eidlist_opt {*ExprList}
 %destructor eidlist_opt {sqlite3ExprListDelete(pParse->db, $$);}
 
 %include {
@@ -1412,22 +1413,22 @@ uniqueflag(A) ::= .        {A = OE_None;}
   ** a COLLATE clause or an ASC or DESC keyword, except ignore the
   ** error while parsing a legacy schema.
   */
-  static ExprList *parserAddExprIdListTerm(
-    Parse *pParse,
-    ExprList *pPrior,
-    Token *pIdToken,
-    int hasCollate,
-    int sortOrder
-  ){
-    ExprList *p = sqlite3ExprListAppend(pParse, pPrior, 0);
-    if( (hasCollate || sortOrder!=SQLITE_SO_UNDEFINED)
-        && pParse->db->init.busy==0
-    ){
-      sqlite3ErrorMsg(pParse, "syntax error after column name \"%.*s\"",
-                         pIdToken->n, pIdToken->z);
-    }
-    sqlite3ExprListSetName(pParse, p, pIdToken, 1);
-    return p;
+  func parserAddExprIdListTerm(
+    pParse *Parse,
+    pPrior *ExprList,
+    pIdToken *Token,
+    hasCollate int,
+    sortOrder int,
+  ) *ExprList {
+    // ExprList *p = sqlite3ExprListAppend(pParse, pPrior, 0);
+    // if( (hasCollate || sortOrder!=SQLITE_SO_UNDEFINED)
+    //     && pParse->db->init.busy==0
+    // ){
+    //   sqlite3ErrorMsg(pParse, "syntax error after column name \"%.*s\"",
+    //                      pIdToken->n, pIdToken->z);
+    // }
+    // sqlite3ExprListSetName(pParse, p, pIdToken, 1);
+    return nil;
   }
 } // end %include
 
@@ -1452,7 +1453,7 @@ cmd ::= DROP INDEX ifexists(E) fullname(X).   {sqlite3DropIndex(pParse, X, E);}
 ///////////////////////////// The VACUUM command /////////////////////////////
 //
 %if !SQLITE_OMIT_VACUUM && !SQLITE_OMIT_ATTACH
-%type vinto {Expr*}
+%type vinto {*Expr}
 %destructor vinto {sqlite3ExprDelete(pParse->db, $$);}
 cmd ::= VACUUM vinto(Y).                {sqlite3Vacuum(pParse,0,Y);}
 cmd ::= VACUUM nm(X) vinto(Y).          {sqlite3Vacuum(pParse,&X,Y);}
@@ -1513,12 +1514,12 @@ trigger_event(A) ::= UPDATE OF idlist(X).{A.a = TK_UPDATE; A.b = X;}
 foreach_clause ::= .
 foreach_clause ::= FOR EACH ROW.
 
-%type when_clause {Expr*}
+%type when_clause {*Expr}
 %destructor when_clause {sqlite3ExprDelete(pParse->db, $$);}
 when_clause(A) ::= .             { A = 0; }
 when_clause(A) ::= WHEN expr(X). { A = X; }
 
-%type trigger_cmd_list {TriggerStep*}
+%type trigger_cmd_list {*TriggerStep}
 %destructor trigger_cmd_list {sqlite3DeleteTriggerStep(pParse->db, $$);}
 trigger_cmd_list(A) ::= trigger_cmd_list(A) trigger_cmd(X) SEMI. {
   assert( A!=0 );
@@ -1561,7 +1562,7 @@ tridxby ::= NOT INDEXED. {
 
 
 
-%type trigger_cmd {TriggerStep*}
+%type trigger_cmd {*TriggerStep}
 %destructor trigger_cmd {sqlite3DeleteTriggerStep(pParse->db, $$);}
 // UPDATE 
 trigger_cmd(A) ::=
@@ -1618,7 +1619,7 @@ cmd ::= DETACH database_kw_opt expr(D). {
   sqlite3Detach(pParse, D);
 }
 
-%type key_opt {Expr*}
+%type key_opt {*Expr}
 %destructor key_opt {sqlite3ExprDelete(pParse->db, $$);}
 key_opt(A) ::= .                     { A = 0; }
 key_opt(A) ::= KEY expr(X).          { A = X; }
@@ -1690,9 +1691,9 @@ anylist ::= anylist ANY.
 
 
 //////////////////////// COMMON TABLE EXPRESSIONS ////////////////////////////
-%type wqlist {With*}
+%type wqlist {*With}
 %destructor wqlist {sqlite3WithDelete(pParse->db, $$);}
-%type wqitem {Cte*}
+%type wqitem {*Cte}
 // %destructor wqitem {sqlite3CteDelete(pParse->db, $$);} // not reachable
 
 with ::= .
@@ -1700,7 +1701,7 @@ with ::= .
 with ::= WITH wqlist(W).              { sqlite3WithPush(pParse, W, 1); }
 with ::= WITH RECURSIVE wqlist(W).    { sqlite3WithPush(pParse, W, 1); }
 
-%type wqas {u8}
+%type wqas {uint8}
 wqas(A)   ::= AS.                  {A = M10d_Any;}
 wqas(A)   ::= AS MATERIALIZED.     {A = M10d_Yes;}
 wqas(A)   ::= AS NOT MATERIALIZED. {A = M10d_No;}
@@ -1722,7 +1723,7 @@ wqlist(A) ::= wqlist(A) COMMA wqitem(X). {
 // tokens that may be output by the tokenizer except TK_SPACE and TK_ILLEGAL.
 //
 %ifndef SQLITE_OMIT_WINDOWFUNC
-%type windowdefn_list {Window*}
+%type windowdefn_list {*Window}
 %destructor windowdefn_list {sqlite3WindowListDelete(pParse->db, $$);}
 windowdefn_list(A) ::= windowdefn(Z). { A = Z; }
 windowdefn_list(A) ::= windowdefn_list(Y) COMMA windowdefn(Z). {
@@ -1732,7 +1733,7 @@ windowdefn_list(A) ::= windowdefn_list(Y) COMMA windowdefn(Z). {
   A = Z;
 }
 
-%type windowdefn {Window*}
+%type windowdefn {*Window}
 %destructor windowdefn {sqlite3WindowDelete(pParse->db, $$);}
 windowdefn(A) ::= nm(X) AS LP window(Y) RP. {
   if( ALWAYS(Y) ){
@@ -1741,22 +1742,22 @@ windowdefn(A) ::= nm(X) AS LP window(Y) RP. {
   A = Y;
 }
 
-%type window {Window*}
+%type window {*Window}
 %destructor window {sqlite3WindowDelete(pParse->db, $$);}
 
-%type frame_opt {Window*}
+%type frame_opt {*Window}
 %destructor frame_opt {sqlite3WindowDelete(pParse->db, $$);}
 
-%type part_opt {ExprList*}
+%type part_opt {*ExprList}
 %destructor part_opt {sqlite3ExprListDelete(pParse->db, $$);}
 
-%type filter_clause {Expr*}
+%type filter_clause {*Expr}
 %destructor filter_clause {sqlite3ExprDelete(pParse->db, $$);}
 
-%type over_clause {Window*}
+%type over_clause {*Window}
 %destructor over_clause {sqlite3WindowDelete(pParse->db, $$);}
 
-%type filter_over {Window*}
+%type filter_over {*Window}
 %destructor filter_over {sqlite3WindowDelete(pParse->db, $$);}
 
 %type range_or_rows {int}
@@ -1809,17 +1810,17 @@ frame_bound(A) ::= expr(X) PRECEDING|FOLLOWING(Y).
                                              {A.eType = @Y; A.pExpr = X;}
 frame_bound(A) ::= CURRENT(X) ROW.           {A.eType = @X; A.pExpr = 0;}
 
-%type frame_exclude_opt {u8}
+%type frame_exclude_opt {uint8}
 frame_exclude_opt(A) ::= . {A = 0;}
 frame_exclude_opt(A) ::= EXCLUDE frame_exclude(X). {A = X;}
 
-%type frame_exclude {u8}
+%type frame_exclude {uint8}
 frame_exclude(A) ::= NO(X) OTHERS.   {A = @X; /*A-overwrites-X*/}
 frame_exclude(A) ::= CURRENT(X) ROW. {A = @X; /*A-overwrites-X*/}
 frame_exclude(A) ::= GROUP|TIES(X).  {A = @X; /*A-overwrites-X*/}
 
 
-%type window_clause {Window*}
+%type window_clause {*Window}
 %destructor window_clause {sqlite3WindowListDelete(pParse->db, $$);}
 window_clause(A) ::= WINDOW windowdefn_list(B). { A = B; }
 
@@ -1886,9 +1887,9 @@ filter_clause(A) ::= FILTER LP WHERE expr(X) RP.  { A = X; }
 ** appear after this line.
 */
 %include {
-#if TK_SPAN>255
-# error too many tokens in the grammar
-#endif
+// #if TK_SPAN>255
+// # error too many tokens in the grammar
+// #endif
 }
 
 /*
