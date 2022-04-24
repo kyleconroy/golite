@@ -19,7 +19,7 @@ func sqlite3DeleteTriggerStep(db *sqlite3, p *TriggerStep) {}
 
 func sqlite3IdListDelete(db *sqlite3, p *IdList) {}
 
-func sqlite3ErrorMsg(p *Parse, args ...string) {}
+func sqlite3ErrorMsg(p *Parse, fmt string, args ...interface{}) {}
 
 func sqlite3FinishCoding(*Parse) {}
 
@@ -38,5 +38,7 @@ func sqlite3_strnicmp(textA, textB string, length int) int {
 }
 
 func sqlite3AddColumn(*Parse, Token, Token) {}
+
+func sqlite3AddDefaultValue(*Parse, *Expr, string, string) {}
 
 // ./parse.go:2628:3: undefined: sqlite3ErrorMsg

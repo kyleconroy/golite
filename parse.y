@@ -32,7 +32,7 @@
 
 // An extra argument to the constructor for the parser, which is available
 // to all actions.
-%extra_context {pParse *Parse}
+%extra_context {pParse *ctxDecl}
 
 // This code runs whenever there is a syntax error
 //
@@ -72,7 +72,8 @@ import (
 /*
 ** Make yytestcase() the same as testcase()
 */
-// TODO: #define yytestcase(X) testcase(X)
+func yytestcase(bool) {}
+func testcase(bool) {}
 
 /*
 ** Indicate that sqlite3ParserFree() will never be called with a null
@@ -95,6 +96,8 @@ const YYPARSEFREENEVERNULL = 1
 ** into sqlite3ParserAlloc().  The default is size_t.
 */
 type YYMALLOCARGTYPE uint64
+
+type ctxDecl = Parse
 
 /*
 ** An instance of the following structure describes the event of a
@@ -201,14 +204,20 @@ ifnotexists(A) ::= .              {A = 0;}
 ifnotexists(A) ::= IF NOT EXISTS. {A = 1;}
 %type temp {int}
 %ifndef SQLITE_OMIT_TEMPDB
-temp(A) ::= TEMP.  {A = pParse.db.init.busy==0;}
+temp(A) ::= TEMP.  {
+  if pParse.db.init.busy==0 {
+    A = 1;
+  } else {
+    A = 0;
+  }
+}
 %endif  SQLITE_OMIT_TEMPDB
 temp(A) ::= .      {A = 0;}
 create_table_args ::= LP columnlist conslist_opt(X) RP(E) table_option_set(F). {
-  sqlite3EndTable(pParse,&X,&E,F,0);
+  sqlite3EndTable(pParse,&X,&E,F,nil);
 }
 create_table_args ::= AS select(S). {
-  sqlite3EndTable(pParse,0,0,0,S);
+  sqlite3EndTable(pParse,nil,nil,0,S);
   sqlite3SelectDelete(pParse.db, S);
 }
 %type table_option_set {uint32}
@@ -350,11 +359,11 @@ signed ::= minus_num.
 //
 %type scanpt {string}
 scanpt(A) ::= . {
-  assert( yyLookahead!=YYNOCODE );
+  assert( yyLookahead!=YYNOCODE, "yyLookahead!=YYNOCODE");
   A = yyLookaheadToken.z;
 }
 scantok(A) ::= . {
-  assert( yyLookahead!=YYNOCODE );
+  assert( yyLookahead!=YYNOCODE, "yyLookahead!=YYNOCODE");
   A = yyLookaheadToken;
 }
 
@@ -1126,7 +1135,7 @@ expr(A) ::= VARIABLE(X).     {
     ** in the virtual machine.  #N is the N-th register. */
     var t Token
     t = X; /*A-overwrites-X*/
-    assert( t.n>=2 );
+    assert( t.n>=2 , "t.n>=2");
     if( pParse.nested==0 ){
       sqlite3ErrorMsg(pParse, "near \"%T\": syntax error", &t);
       A = 0;
@@ -1586,12 +1595,12 @@ when_clause(A) ::= WHEN expr(X). { A = X; }
 %type trigger_cmd_list {*TriggerStep}
 %destructor trigger_cmd_list {sqlite3DeleteTriggerStep(pParse.db, $$);}
 trigger_cmd_list(A) ::= trigger_cmd_list(A) trigger_cmd(X) SEMI. {
-  assert( A!=0 );
+  assert( A!=0, "A!=0");
   A.pLast.pNext = X;
   A.pLast = X;
 }
 trigger_cmd_list(A) ::= trigger_cmd(A) SEMI. { 
-  assert( A!=0 );
+  assert( A!=0, "A!=0");
   A.pLast = A;
 }
 
@@ -1791,7 +1800,7 @@ wqlist(A) ::= wqlist(A) COMMA wqitem(X). {
 %destructor windowdefn_list {sqlite3WindowListDelete(pParse.db, $$);}
 windowdefn_list(A) ::= windowdefn(Z). { A = Z; }
 windowdefn_list(A) ::= windowdefn_list(Y) COMMA windowdefn(Z). {
-  assert( Z!=0 );
+  assert( Z!=0, "Z!=0");
   sqlite3WindowChain(pParse, Z, Y);
   Z.pNextWin = Y;
   A = Z;
@@ -1911,7 +1920,7 @@ filter_over(A) ::= filter_clause(F). {
 
 over_clause(A) ::= OVER LP window(Z) RP. {
   A = Z;
-  assert( A!=0 );
+  assert( A!=0, "A!=0");
 }
 over_clause(A) ::= OVER nm(Z). {
   A = sqlite3DbMallocZero(pParse.db, sizeof(Window)).(*Window);

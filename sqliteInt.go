@@ -1,5 +1,51 @@
 package internal
 
+/*
+** Allowed values for Table.tabFlags.
+**
+** TF_OOOHidden applies to tables or view that have hidden columns that are
+** followed by non-hidden columns.  Example:  "CREATE VIRTUAL TABLE x USING
+** vtab1(a HIDDEN, b);".  Since "b" is a non-hidden column but "a" is hidden,
+** the TF_OOOHidden attribute would apply in this case.  Such tables require
+** special handling during INSERT processing. The "OOO" means "Out Of Order".
+**
+** Constraints:
+**
+**         TF_HasVirtual == COLFLAG_VIRTUAL
+**         TF_HasStored  == COLFLAG_STORED
+**         TF_HasHidden  == COLFLAG_HIDDEN
+ */
+const (
+	TF_Readonly      = 0x00000001 /* Read-only system table */
+	TF_HasHidden     = 0x00000002 /* Has one or more hidden columns */
+	TF_HasPrimaryKey = 0x00000004 /* Table has a primary key */
+	TF_Autoincrement = 0x00000008 /* Integer primary key is autoincrement */
+	TF_HasStat1      = 0x00000010 /* nRowLogEst set from sqlite_stat1 */
+	TF_HasVirtual    = 0x00000020 /* Has one or more VIRTUAL columns */
+	TF_HasStored     = 0x00000040 /* Has one or more STORED columns */
+	TF_HasGenerated  = 0x00000060 /* Combo: HasVirtual + HasStored */
+	TF_WithoutRowid  = 0x00000080 /* No rowid.  PRIMARY KEY is the key */
+	TF_StatsUsed     = 0x00000100 /* Query planner decisions affected by
+	 ** Index.aiRowLogEst[] values */
+	TF_NoVisibleRowid = 0x00000200 /* No user-visible "rowid" column */
+	TF_OOOHidden      = 0x00000400 /* Out-of-Order hidden columns */
+	TF_HasNotNull     = 0x00000800 /* Contains NOT NULL constraints */
+	TF_Shadow         = 0x00001000 /* True for a shadow table */
+	TF_HasStat4       = 0x00002000 /* STAT4 info available for this table */
+	TF_Ephemeral      = 0x00004000 /* An ephemeral table */
+	TF_Eponymous      = 0x00008000 /* An eponymous virtual table */
+	TF_Strict         = 0x00010000 /* STRICT mode */
+)
+
+/*
+** Allowed values for Table.eTabType
+ */
+const (
+	TABTYP_NORM = 0 /* Ordinary table */
+	TABTYP_VTAB = 1 /* Virtual table */
+	TABTYP_VIEW = 2 /* A view */
+)
+
 // TODO: I made these up
 type Hash uint64
 type Pgno uint64
@@ -564,8 +610,8 @@ type OnOrUsing struct {
 ** list.
  */
 type Parse struct {
-	// sqlite3 *db;         /* The main database structure */
-	// char *zErrMsg;       /* An error message */
+	db      *sqlite3 /* The main database structure */
+	zErrMsg string   /* An error message */
 	// Vdbe *pVdbe;         /* An engine for executing database bytecode */
 	rc               int   /* Return code from execution */
 	colNamesSet      uint8 /* TRUE after OP_ColumnName has been issued to pVdbe */
@@ -595,7 +641,7 @@ type Parse struct {
 	nLabelAlloc int  /* Number of slots in aLabel */
 	aLabel      *int /* Space to hold the labels */
 	//   ExprList *pConstExpr;/* Constant expressions */
-	//   Token constraintName;/* Name of the constraint currently being parsed */
+	constraintName Token /* Name of the constraint currently being parsed */
 	//   yDbMask writeMask;   /* Start a write transaction on these databases */
 	//   yDbMask cookieMask;  /* Bitmask of schema verified databases */
 	regRowid int /* Register holding rowid of CREATE TABLE entry */
@@ -641,29 +687,29 @@ type Parse struct {
 	//   ** first field in the recursive region.
 	//   ************************************************************************/
 	//
-	//   Token sLastToken;       /* The last token parsed */
-	//   ynVar nVar;               /* Number of '?' variables seen in the SQL so far */
-	//   u8 iPkSortOrder;          /* ASC or DESC for INTEGER PRIMARY KEY */
-	//   u8 explain;               /* True if the EXPLAIN flag is found on the query */
-	//   u8 eParseMode;            /* PARSE_MODE_XXX constant */
+	sLastToken   Token /* The last token parsed */
+	nVar         ynVar /* Number of '?' variables seen in the SQL so far */
+	iPkSortOrder uint8 /* ASC or DESC for INTEGER PRIMARY KEY */
+	explain      uint8 /* True if the EXPLAIN flag is found on the query */
+	eParseMode   uint8 /* PARSE_MODE_XXX constant */
 	// // #ifndef SQLITE_OMIT_VIRTUALTABLE
-	//   int nVtabLock;            /* Number of virtual tables to lock */
+	nVtabLock int /* Number of virtual tables to lock */
 	// // #endif
-	//   int nHeight;              /* Expression tree height of current sub-select */
+	nHeight int /* Expression tree height of current sub-select */
 	// // #ifndef SQLITE_OMIT_EXPLAIN
-	//   int addrExplain;          /* Address of current OP_Explain opcode */
+	addrExplain int /* Address of current OP_Explain opcode */
 	// // j#endif
 	//   VList *pVList;            /* Mapping between variable names and numbers */
 	//   Vdbe *pReprepare;         /* VM being reprepared (sqlite3Reprepare()) */
-	//   const char *zTail;        /* All SQL text past the last semicolon parsed */
-	//   Table *pNewTable;         /* A table being constructed by CREATE TABLE */
-	//   Index *pNewIndex;         /* An index being constructed by CREATE INDEX.
+	zTail     string /* All SQL text past the last semicolon parsed */
+	pNewTable *Table /* A table being constructed by CREATE TABLE */
+	pNewIndex *Index /* An index being constructed by CREATE INDEX.
 	//                             ** Also used to hold redundant UNIQUE constraints
 	//                             ** during a RENAME COLUMN */
-	//   Trigger *pNewTrigger;     /* Trigger under construct by a CREATE TRIGGER */
-	//   const char *zAuthContext; /* The 6th parameter to db->xAuth callbacks */
+	pNewTrigger  *Trigger /* Trigger under construct by a CREATE TRIGGER */
+	zAuthContext string   /* The 6th parameter to db->xAuth callbacks */
 	// #ifndef SQLITE_OMIT_VIRTUALTABLE
-	//   Token sArg;               /* Complete text of a module argument */
+	sArg Token /* Complete text of a module argument */
 	//   Table **apVtabLock;       /* Pointer to virtual tables needing locking */
 	// #endif
 	//   With *pWith;              /* Current WITH clause, or NULL */
@@ -671,6 +717,29 @@ type Parse struct {
 	//   RenameToken *pRename;     /* Tokens subject to renaming by ALTER TABLE */
 	// #endif
 }
+
+/*
+** All current savepoints are stored in a linked list starting at
+** sqlite3.pSavepoint. The first element in the list is the most recently
+** opened savepoint. Savepoints are added to the list by the vdbe
+** OP_Savepoint instruction.
+ */
+type Savepoint struct {
+	zName            string     /* Savepoint name (nul-terminated) */
+	nDeferredCons    int64      /* Number of deferred fk violations */
+	nDeferredImmCons int64      /* Number of deferred imm fk. */
+	pNext            *Savepoint /* Parent savepoint (if any) */
+}
+
+/*
+** The following are used as the second parameter to sqlite3Savepoint(),
+** and as the P1 argument to the OP_Savepoint instruction.
+ */
+const (
+	SAVEPOINT_BEGIN    = 0
+	SAVEPOINT_RELEASE  = 1
+	SAVEPOINT_ROLLBACK = 2
+)
 
 /*
 ** An instance of the following structure stores a database schema.
@@ -1119,4 +1188,149 @@ type With struct {
 	bView  int   /* Belongs to the outermost Select of a view */
 	pOuter *With /* Containing WITH clause, or NULL */
 	a      []Cte /* For each CTE in the WITH clause.... */
+}
+
+/*
+** Each database connection is an instance of the following structure.
+ */
+type sqlite3 struct {
+	//   sqlite3_vfs *pVfs;            /* OS Interface */
+	//   struct Vdbe *pVdbe;           /* List of active virtual machines */
+	//   CollSeq *pDfltColl;           /* BINARY collseq for the database encoding */
+	//   sqlite3_mutex *mutex;         /* Connection mutex */
+	//   Db *aDb;                      /* All backends */
+	//   int nDb;                      /* Number of backends currently in use */
+	//   u32 mDbFlags;                 /* flags recording internal state */
+	//   u64 flags;                    /* flags settable by pragmas. See below */
+	//   i64 lastRowid;                /* ROWID of most recent insert (see above) */
+	//   i64 szMmap;                   /* Default mmap_size setting */
+	//   u32 nSchemaLock;              /* Do not reset the schema when non-zero */
+	//   unsigned int openFlags;       /* Flags passed to sqlite3_vfs.xOpen() */
+	//   int errCode;                  /* Most recent error code (SQLITE_*) */
+	//   int errByteOffset;            /* Byte offset of error in SQL statement */
+	//   int errMask;                  /* & result codes with this before returning */
+	//   int iSysErrno;                /* Errno value from last system error */
+	//   u32 dbOptFlags;               /* Flags to enable/disable optimizations */
+	//   u8 enc;                       /* Text encoding */
+	//   u8 autoCommit;                /* The auto-commit flag. */
+	//   u8 temp_store;                /* 1: file 2: memory 0: default */
+	//   u8 mallocFailed;              /* True if we have seen a malloc failure */
+	//   u8 bBenignMalloc;             /* Do not require OOMs if true */
+	//   u8 dfltLockMode;              /* Default locking-mode for attached dbs */
+	//   signed char nextAutovac;      /* Autovac setting after VACUUM if >=0 */
+	//   u8 suppressErr;               /* Do not issue error messages if true */
+	//   u8 vtabOnConflict;            /* Value to return for s3_vtab_on_conflict() */
+	//   u8 isTransactionSavepoint;    /* True if the outermost savepoint is a TS */
+	//   u8 mTrace;                    /* zero or more SQLITE_TRACE flags */
+	//   u8 noSharedCache;             /* True if no shared-cache backends */
+	//   u8 nSqlExec;                  /* Number of pending OP_SqlExec opcodes */
+	//   u8 eOpenState;                /* Current condition of the connection */
+	//   int nextPagesize;             /* Pagesize after VACUUM if >0 */
+	//   i64 nChange;                  /* Value returned by sqlite3_changes() */
+	//   i64 nTotalChange;             /* Value returned by sqlite3_total_changes() */
+	//   int aLimit[SQLITE_N_LIMIT];   /* Limits */
+	//   int nMaxSorterMmap;           /* Maximum size of regions mapped by sorter */
+	init struct { /* Information used during initialization */
+		newTnum Pgno  /* Rootpage of table being initialized */
+		iDb     uint8 /* Which db file is being initialized */
+		busy    uint8 /* TRUE if currently initializing */
+		// unsigned orphanTrigger : 1; /* Last statement is orphaned TEMP trigger */
+		// unsigned imposterTable : 1; /* Building an imposter table */
+		// unsigned reopenMemdb : 1;   /* ATTACH is really a reopen using MemDB */
+		azInit string /* "type", "name", and "tbl_name" columns */
+	}
+	//   int nVdbeActive;              /* Number of VDBEs currently running */
+	//   int nVdbeRead;                /* Number of active VDBEs that read or write */
+	//   int nVdbeWrite;               /* Number of active VDBEs that read and write */
+	//   int nVdbeExec;                /* Number of nested calls to VdbeExec() */
+	//   int nVDestroy;                /* Number of active OP_VDestroy operations */
+	//   int nExtension;               /* Number of loaded extensions */
+	//   void **aExtension;            /* Array of shared library handles */
+	//   union {
+	//     void (*xLegacy)(void*,const char*);   /* mTrace==SQLITE_TRACE_LEGACY */
+	//     int (*xV2)(u32,void*,void*,void*);    /* All other mTrace values */
+	//   } trace;
+	//   void *pTraceArg;                        /* Argument to the trace function */
+	// #ifndef SQLITE_OMIT_DEPRECATED
+	//   void (*xProfile)(void*,const char*,u64);  /* Profiling function */
+	//   void *pProfileArg;                        /* Argument to profile function */
+	// #endif
+	//   void *pCommitArg;                 /* Argument to xCommitCallback() */
+	//   int (*xCommitCallback)(void*);    /* Invoked at every commit. */
+	//   void *pRollbackArg;               /* Argument to xRollbackCallback() */
+	//   void (*xRollbackCallback)(void*); /* Invoked at every commit. */
+	//   void *pUpdateArg;
+	//   void (*xUpdateCallback)(void*,int, const char*,const char*,sqlite_int64);
+	//   void *pAutovacPagesArg;           /* Client argument to autovac_pages */
+	//   void (*xAutovacDestr)(void*);     /* Destructor for pAutovacPAgesArg */
+	//   unsigned int (*xAutovacPages)(void*,const char*,u32,u32,u32);
+	//   Parse *pParse;                /* Current parse */
+	// #ifdef SQLITE_ENABLE_PREUPDATE_HOOK
+	//   void *pPreUpdateArg;          /* First argument to xPreUpdateCallback */
+	//   void (*xPreUpdateCallback)(   /* Registered using sqlite3_preupdate_hook() */
+	//     void*,sqlite3*,int,char const*,char const*,sqlite3_int64,sqlite3_int64
+	//   );
+	//   PreUpdate *pPreUpdate;        /* Context for active pre-update callback */
+	// #endif /* SQLITE_ENABLE_PREUPDATE_HOOK */
+	// #ifndef SQLITE_OMIT_WAL
+	//   int (*xWalCallback)(void *, sqlite3 *, const char *, int);
+	//   void *pWalArg;
+	// #endif
+	//   void(*xCollNeeded)(void*,sqlite3*,int eTextRep,const char*);
+	//   void(*xCollNeeded16)(void*,sqlite3*,int eTextRep,const void*);
+	//   void *pCollNeededArg;
+	//   sqlite3_value *pErr;          /* Most recent error message */
+	//   union {
+	//     volatile int isInterrupted; /* True if sqlite3_interrupt has been called */
+	//     double notUsed1;            /* Spacer */
+	//   } u1;
+	//   Lookaside lookaside;          /* Lookaside malloc configuration */
+	// #ifndef SQLITE_OMIT_AUTHORIZATION
+	//   sqlite3_xauth xAuth;          /* Access authorization function */
+	//   void *pAuthArg;               /* 1st argument to the access auth function */
+	// #endif
+	// #ifndef SQLITE_OMIT_PROGRESS_CALLBACK
+	//   int (*xProgress)(void *);     /* The progress callback */
+	//   void *pProgressArg;           /* Argument to the progress callback */
+	//   unsigned nProgressOps;        /* Number of opcodes for progress callback */
+	// #endif
+	// #ifndef SQLITE_OMIT_VIRTUALTABLE
+	//   int nVTrans;                  /* Allocated size of aVTrans */
+	//   Hash aModule;                 /* populated by sqlite3_create_module() */
+	//   VtabCtx *pVtabCtx;            /* Context for active vtab connect/create */
+	//   VTable **aVTrans;             /* Virtual tables with open transactions */
+	//   VTable *pDisconnect;          /* Disconnect these in next sqlite3_prepare() */
+	// #endif
+	//   Hash aFunc;                   /* Hash table of connection functions */
+	//   Hash aCollSeq;                /* All collating sequences */
+	//   BusyHandler busyHandler;      /* Busy callback */
+	//   Db aDbStatic[2];              /* Static space for the 2 default backends */
+	//   Savepoint *pSavepoint;        /* List of active savepoints */
+	//   int nAnalysisLimit;           /* Number of index rows to ANALYZE */
+	//   int busyTimeout;              /* Busy handler timeout, in msec */
+	//   int nSavepoint;               /* Number of non-transaction savepoints */
+	//   int nStatement;               /* Number of nested statement-transactions  */
+	//   i64 nDeferredCons;            /* Net deferred constraints this transaction. */
+	//   i64 nDeferredImmCons;         /* Net deferred immediate constraints */
+	//   int *pnBytesFreed;            /* If not NULL, increment this in DbFree() */
+	// #ifdef SQLITE_ENABLE_UNLOCK_NOTIFY
+	//   /* The following variables are all protected by the STATIC_MAIN
+	//   ** mutex, not by sqlite3.mutex. They are used by code in notify.c.
+	//   **
+	//   ** When X.pUnlockConnection==Y, that means that X is waiting for Y to
+	//   ** unlock so that it can proceed.
+	//   **
+	//   ** When X.pBlockingConnection==Y, that means that something that X tried
+	//   ** tried to do recently failed with an SQLITE_LOCKED error due to locks
+	//   ** held by Y.
+	//   */
+	//   sqlite3 *pBlockingConnection; /* Connection that caused SQLITE_LOCKED */
+	//   sqlite3 *pUnlockConnection;           /* Connection to watch for unlock */
+	//   void *pUnlockArg;                     /* Argument to xUnlockNotify */
+	//   void (*xUnlockNotify)(void **, int);  /* Unlock notify callback */
+	//   sqlite3 *pNextBlocked;        /* Next in list of all blocked connections */
+	// #endif
+	// #ifdef SQLITE_USER_AUTHENTICATION
+	//   sqlite3_userauth auth;        /* User authentication information */
+	// #endif
 }
