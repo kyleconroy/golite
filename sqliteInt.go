@@ -539,6 +539,15 @@ type IndexSample struct {
 }
 
 /*
+** The OnOrUsing object represents either an ON clause or a USING clause.
+** It can never be both at the same time, but it can be neither.
+ */
+type OnOrUsing struct {
+	pOn    *Expr   /* The ON clause of a join */
+	pUsing *IdList /* The USING clause of a join */
+}
+
+/*
 ** An SQL parser context.  A copy of this structure is passed through
 ** the parser and down into all the parser action routine in order to
 ** carry around information that is global to the entire parse.
@@ -850,6 +859,21 @@ type Table struct {
 	}
 	pTrigger *Trigger /* List of triggers on this object */
 	pSchema  *Schema  /* Schema that contains this table */
+}
+
+/*
+** Each token coming out of the lexer is an instance of
+** this structure.  Tokens are also used as part of an expression.
+**
+** The memory that "z" points to is owned by other objects.  Take care
+** that the owner of the "z" string does not deallocate the string before
+** the Token goes out of scope!  Very often, the "z" points to some place
+** in the middle of the Parse.zSql text.  But it might also point to a
+** static string.
+ */
+type Token struct {
+	z string /* Text of the token.  Not NULL-terminated! */
+	n uint   /* Number of characters in this token */
 }
 
 /*
