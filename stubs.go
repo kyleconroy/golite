@@ -23,9 +23,9 @@ func sqlite3ErrorMsg(p *Parse, fmt string, args ...interface{}) {}
 
 func sqlite3FinishCoding(*Parse) {}
 
-func sqlite3BeginTransaction(*Parse, int) {}
+func sqlite3BeginTransaction(*Parse, uint16) {}
 
-func sqlite3EndTransaction(*Parse, int) {}
+func sqlite3EndTransaction(*Parse, uint16) {}
 
 func sqlite3Savepoint(*Parse, int, *Token) {}
 
