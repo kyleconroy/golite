@@ -226,7 +226,7 @@ table_option_set(A) ::= .    {A = 0;}
 table_option_set(A) ::= table_option(A).
 table_option_set(A) ::= table_option_set(X) COMMA table_option(Y). {A = X|Y;}
 table_option(A) ::= WITHOUT nm(X). {
-  if( X.n==5 && sqlite3_strnicmp(X.z,"rowid",5)==0 ){
+  if( X.n==5 && sqlite3_strnicmp(X.z,[]byte("rowid"),5)==0 ){
     A = TF_WithoutRowid | TF_NoVisibleRowid;
   }else{
     A = 0;
@@ -234,7 +234,7 @@ table_option(A) ::= WITHOUT nm(X). {
   }
 }
 table_option(A) ::= nm(X). {
-  if( X.n==6 && sqlite3_strnicmp(X.z,"strict",6)==0 ){
+  if( X.n==6 && sqlite3_strnicmp(X.z,[]byte("strict"),6)==0 ){
     A = TF_Strict;
   }else{
     A = 0;
@@ -330,13 +330,13 @@ nm(A) ::= JOIN_KW(A).
 // Multiple tokens are concatenated to form the value of the typetoken.
 //
 %type typetoken {Token}
-typetoken(A) ::= .   {A.n = 0; A.z = 0;}
+typetoken(A) ::= .   {A.n = 0; A.z = []byte{};}
 typetoken(A) ::= typename(A).
 typetoken(A) ::= typename(A) LP signed RP(Y). {
-  A.n = (int)(&Y.z[Y.n] - A.z);
+  A.n = uint(len(Y.z) - len(A.z));
 }
 typetoken(A) ::= typename(A) LP signed COMMA signed RP(Y). {
-  A.n = (int)(&Y.z[Y.n] - A.z);
+  A.n = uint(len(Y.z) - len(A.z));
 }
 %type typename {Token}
 typename(A) ::= ids(A).
@@ -357,7 +357,7 @@ signed ::= minus_num.
 // whitespace on either end of the text, but that can be removed in
 // post-processing, if needed.
 //
-%type scanpt {string}
+%type scanpt {[]byte}
 scanpt(A) ::= . {
   assert( yyLookahead!=YYNOCODE, "yyLookahead!=YYNOCODE");
   A = yyLookaheadToken.z;
@@ -374,22 +374,22 @@ carglist ::= carglist ccons.
 carglist ::= .
 ccons ::= CONSTRAINT nm(X).           {pParse.constraintName = X;}
 ccons ::= DEFAULT scantok(A) term(X).
-                            {sqlite3AddDefaultValue(pParse,X,A.z,&A.z[A.n]);}
+                            {/*sqlite3AddDefaultValue(pParse,X,A.z,&A.z[A.n]);*/}
 ccons ::= DEFAULT LP(A) expr(X) RP(Z).
-                            {sqlite3AddDefaultValue(pParse,X,A.z+1,Z.z);}
+                            {/*sqlite3AddDefaultValue(pParse,X,A.z+1,Z.z);*/}
 ccons ::= DEFAULT PLUS(A) scantok(Z) term(X).
-                            {sqlite3AddDefaultValue(pParse,X,A.z,&Z.z[Z.n]);}
+                            {/*sqlite3AddDefaultValue(pParse,X,A.z,&Z.z[Z.n]);*/}
 ccons ::= DEFAULT MINUS(A) scantok(Z) term(X). {
-  Expr *p = sqlite3PExpr(pParse, TK_UMINUS, X, 0);
-  sqlite3AddDefaultValue(pParse,p,A.z,&Z.z[Z.n]);
+  p := sqlite3PExpr(pParse, TK_UMINUS, X, nil);
+  // sqlite3AddDefaultValue(pParse,p,A.z,&Z.z[Z.n]);
 }
 ccons ::= DEFAULT scantok id(X).       {
-  Expr *p = tokenExpr(pParse, TK_STRING, X);
-  if( p ){
+  p := tokenExpr(pParse, TK_STRING, X);
+  if( p != nil){
     sqlite3ExprIdToTrueFalse(p);
     testcase( p.op==TK_TRUEFALSE && sqlite3ExprTruthValue(p) );
   }
-    sqlite3AddDefaultValue(pParse,p,X.z,X.z+X.n);
+  // sqlite3AddDefaultValue(pParse,p,X.z,X.z+X.n);
 }
 
 // In addition to the type name, we also care about the primary key and
@@ -398,17 +398,17 @@ ccons ::= DEFAULT scantok id(X).       {
 ccons ::= NULL onconf.
 ccons ::= NOT NULL onconf(R).    {sqlite3AddNotNull(pParse, R);}
 ccons ::= PRIMARY KEY sortorder(Z) onconf(R) autoinc(I).
-                                 {sqlite3AddPrimaryKey(pParse,0,R,I,Z);}
-ccons ::= UNIQUE onconf(R).      {sqlite3CreateIndex(pParse,0,0,0,0,R,0,0,0,0,
+                                 {sqlite3AddPrimaryKey(pParse,nil,R,I,Z);}
+ccons ::= UNIQUE onconf(R).      {sqlite3CreateIndex(pParse,nil,nil,nil,nil,R,nil,nil,0,0,
                                    SQLITE_IDXTYPE_UNIQUE);}
 ccons ::= CHECK LP(A) expr(X) RP(B).  {sqlite3AddCheckConstraint(pParse,X,A.z,B.z);}
 ccons ::= REFERENCES nm(T) eidlist_opt(TA) refargs(R).
-                                 {sqlite3CreateForeignKey(pParse,0,&T,TA,R);}
+                                 {sqlite3CreateForeignKey(pParse,nil,&T,TA,R);}
 ccons ::= defer_subclause(D).    {sqlite3DeferForeignKey(pParse,D);}
 ccons ::= COLLATE ids(C).        {sqlite3AddCollateType(pParse, &C);}
 ccons ::= GENERATED ALWAYS AS generated.
 ccons ::= AS generated.
-generated ::= LP expr(E) RP.          {sqlite3AddGenerated(pParse,E,0);}
+generated ::= LP expr(E) RP.          {sqlite3AddGenerated(pParse,E,nil);}
 generated ::= LP expr(E) RP ID(TYPE). {sqlite3AddGenerated(pParse,E,&TYPE);}
 
 // The optional AUTOINCREMENT keyword
@@ -453,7 +453,7 @@ tcons ::= CONSTRAINT nm(X).      {pParse.constraintName = X;}
 tcons ::= PRIMARY KEY LP sortlist(X) autoinc(I) RP onconf(R).
                                  {sqlite3AddPrimaryKey(pParse,X,R,I,0);}
 tcons ::= UNIQUE LP sortlist(X) RP onconf(R).
-                                 {sqlite3CreateIndex(pParse,0,0,0,X,R,0,0,0,0,
+                                 {sqlite3CreateIndex(pParse,nil,nil,nil,nil,X,R,nil,0,0,
                                        SQLITE_IDXTYPE_UNIQUE);}
 tcons ::= CHECK LP(A) expr(E) RP(B) onconf.
                                  {sqlite3AddCheckConstraint(pParse,E,A.z,B.z);}
@@ -504,7 +504,7 @@ cmd ::= DROP VIEW ifexists(E) fullname(X). {
 //////////////////////// The SELECT statement /////////////////////////////////
 //
 cmd ::= select(X).  {
-  dest := SelectDest{SRT_Output, 0, 0, 0, 0, 0, 0};
+  dest := SelectDest{eDest: SRT_Output};
   sqlite3Select(pParse, X, &dest);
   sqlite3SelectDelete(pParse.db, X);
 }
@@ -570,8 +570,8 @@ select(A) ::= WITH RECURSIVE wqlist(W) selectnowith(X).
                                               {A = attachWithToSelect(pParse,X,W);}
 %endif /* SQLITE_OMIT_CTE */
 select(A) ::= selectnowith(X). {
-  Select *p = X;
-  if( p ){
+  p := X;
+  if( p != nil){
     parserDoubleLinkSelect(pParse, p);
   }
   A = p; /*A-overwrites-X*/
@@ -582,18 +582,18 @@ selectnowith(A) ::= oneselect(A).
 selectnowith(A) ::= selectnowith(A) multiselect_op(Y) oneselect(Z).  {
   pRhs := Z;
   pLhs := A;
-  if( pRhs && pRhs.pPrior ){
+  if( pRhs != nil && pRhs.pPrior != nil){
     var pFrom *SrcList;
     var x Token;
     x.n = 0;
     parserDoubleLinkSelect(pParse, pRhs);
-    pFrom = sqlite3SrcListAppendFromTerm(pParse,0,0,0,&x,pRhs,0);
-    pRhs = sqlite3SelectNew(pParse,0,pFrom,0,0,0,0,0,0);
+    pFrom = sqlite3SrcListAppendFromTerm(pParse,nil,nil,nil,&x,pRhs,nil);
+    pRhs = sqlite3SelectNew(pParse,nil,pFrom,nil,nil,nil,nil,0,nil);
   }
-  if( pRhs ){
+  if( pRhs != nil ){
     pRhs.op = uint8(Y);
     pRhs.pPrior = pLhs;
-    if( ALWAYS(pLhs) ) {
+    if( ALWAYS(pLhs != nil) ) {
       // pLhs.selFlags &= ~SF_MultiValue;
     }
     // pRhs.selFlags &= ~SF_MultiValue;
@@ -621,7 +621,7 @@ oneselect(A) ::= SELECT distinct(D) selcollist(W) from(X) where_opt(Y)
                  groupby_opt(P) having_opt(Q) window_clause(R)
                  orderby_opt(Z) limit_opt(L). {
   A = sqlite3SelectNew(pParse,W,X,Y,P,Q,Z,D,L);
-  if( A ){
+  if( A != nil){
     A.pWinDefn = R;
   }else{
     sqlite3WindowListDelete(pParse.db, R);
@@ -635,15 +635,15 @@ oneselect(A) ::= values(A).
 %type values {*Select}
 %destructor values {sqlite3SelectDelete(pParse.db, $$);}
 values(A) ::= VALUES LP nexprlist(X) RP. {
-  A = sqlite3SelectNew(pParse,X,0,0,0,0,0,SF_Values,0);
+  A = sqlite3SelectNew(pParse,X,nil,nil,nil,nil,nil,SF_Values,nil);
 }
 values(A) ::= values(A) COMMA LP nexprlist(Y) RP. {
   pRight, pLeft := A;
-  pRight = sqlite3SelectNew(pParse,Y,0,0,0,0,0,SF_Values|SF_MultiValue,0);
-  if( ALWAYS(pLeft) ) {
+  pRight = sqlite3SelectNew(pParse,Y,nil,nil,nil,nil,nil,SF_Values|SF_MultiValue,nil);
+  if( ALWAYS(pLeft != nil) ) {
     // pLeft.selFlags &= ~SF_MultiValue;
   } 
-  if( pRight ){
+  if( pRight != nil){
     pRight.op = TK_ALL;
     pRight.pPrior = pLeft;
     A = pRight;
@@ -683,9 +683,9 @@ selcollist(A) ::= sclp(A) scanpt STAR. {
   A = sqlite3ExprListAppend(pParse, A, p);
 }
 selcollist(A) ::= sclp(A) scanpt nm(X) DOT STAR. {
-  Expr *pRight = sqlite3PExpr(pParse, TK_ASTERISK, 0, 0);
-  Expr *pLeft = tokenExpr(pParse, TK_ID, X);
-  Expr *pDot = sqlite3PExpr(pParse, TK_DOT, pLeft, pRight);
+  pRight := sqlite3PExpr(pParse, TK_ASTERISK, 0, 0);
+  pLeft := tokenExpr(pParse, TK_ID, X);
+  pDot := sqlite3PExpr(pParse, TK_DOT, pLeft, pRight);
   A = sqlite3ExprListAppend(pParse,A, pDot);
 }
 
@@ -743,8 +743,8 @@ seltablist(A) ::= stl_prefix(A) nm(Y) dbnm(D) LP exprlist(E) RP as(Z) on_using(N
     }else if( F.nSrc==1 ){
       A = sqlite3SrcListAppendFromTerm(pParse,A,0,0,&Z,0,&N);
       if( A ){
-        SrcItem *pNew = &A.a[A.nSrc-1];
-        SrcItem *pOld = F.a;
+        pNew := &A.a[A.nSrc-1];
+        pOld := F.a;
         pNew.zName = pOld.zName;
         pNew.zDatabase = pOld.zDatabase;
         pNew.pSelect = pOld.pSelect;
@@ -763,7 +763,7 @@ seltablist(A) ::= stl_prefix(A) nm(Y) dbnm(D) LP exprlist(E) RP as(Z) on_using(N
       }
       sqlite3SrcListDelete(pParse.db, F);
     }else{
-      Select *pSubquery;
+      var pSubquery *Select;
       sqlite3SrcListShiftJoinType(pParse,F);
       pSubquery = sqlite3SelectNew(pParse,0,F,0,0,0,0,SF_NestedFrom,0);
       A = sqlite3SrcListAppendFromTerm(pParse,A,0,0,&Z,pSubquery,&N);
@@ -1107,10 +1107,10 @@ expr(A) ::= nm(X) DOT nm(Y). {
   A = sqlite3PExpr(pParse, TK_DOT, temp1, temp2);
 }
 expr(A) ::= nm(X) DOT nm(Y) DOT nm(Z). {
-  Expr *temp1 = tokenExpr(pParse,TK_ID,X);
-  Expr *temp2 = tokenExpr(pParse,TK_ID,Y);
-  Expr *temp3 = tokenExpr(pParse,TK_ID,Z);
-  Expr *temp4 = sqlite3PExpr(pParse, TK_DOT, temp2, temp3);
+  temp1 := tokenExpr(pParse,TK_ID,X);
+  temp2 := tokenExpr(pParse,TK_ID,Y);
+  temp3 := tokenExpr(pParse,TK_ID,Z);
+  temp4 := sqlite3PExpr(pParse, TK_DOT, temp2, temp3);
   if( IN_RENAME_OBJECT ){
     sqlite3RenameTokenRemap(pParse, 0, temp1);
   }

@@ -37,6 +37,14 @@ const (
 	TF_Strict         = 0x00010000 /* STRICT mode */
 )
 
+func ALWAYS(b bool) bool {
+	return b
+}
+
+func NEVER(b bool) bool {
+	return b
+}
+
 /*
 ** Allowed values for Table.eTabType
  */
@@ -176,7 +184,7 @@ type AggInfo struct {
 ** set.
  */
 type Column struct {
-	zCnName string /* Name of this column */
+	zCnName []byte /* Name of this column */
 	// unsigned notNull :4;  /* An OE_ code for handling a NOT NULL constraint */
 	// unsigned eCType :4;   /* One of the standard types */
 	affinity rune   /* One of the SQLITE_AFF_... values */
@@ -190,10 +198,10 @@ type Column struct {
 ** A single common table expression
  */
 type Cte struct {
-	zName   string    /* Name of this CTE */
+	zName   []byte    /* Name of this CTE */
 	pCols   *ExprList /* List of explicit column names, or NULL */
 	pSelect *Select   /* The definition of this CTE */
-	zCteErr string    /* Error message for circular references */
+	zCteErr []byte    /* Error message for circular references */
 	pUse    *CteUse   /* Usage information for this CTE */
 	eM10d   uint8     /* The MATERIALIZED flag */
 }
@@ -365,9 +373,9 @@ type ExprList struct {
 	nExpr  int        /* Number of expressions on the list */
 	nAlloc int        /* Number of a[] slots allocated */
 	a      []struct { /* For each expression in the list */
-		pExpr     *Expr /* The parse tree for this expression */
-		zEName    *rune /* Token associated with this expression */
-		sortFlags uint8 /* Mask of KEYINFO_ORDER_* flags */
+		pExpr     *Expr  /* The parse tree for this expression */
+		zEName    []byte /* Token associated with this expression */
+		sortFlags uint8  /* Mask of KEYINFO_ORDER_* flags */
 		// unsigned eEName :2;     /* Meaning of zEName */
 		// unsigned done :1;       /* A flag to indicate when processing is finished */
 		// unsigned reusable :1;   /* Constant expression is reusable */
@@ -416,7 +424,7 @@ type ExprList struct {
 type FKey struct {
 	pFrom     *Table /* Table containing the REFERENCES clause (aka: Child) */
 	pNextFrom *FKey  /* Next FKey with the same in pFrom. Next parent of pFrom */
-	zTo       string /* Name of table that the key points to (aka: Parent) */
+	zTo       []byte /* Name of table that the key points to (aka: Parent) */
 	pNextTo   *FKey  /* Next with the same zTo. Next child of zTo. */
 	pPrevTo   *FKey  /* Previous with the same zTo */
 	nCol      int    /* Number of columns in this key */
@@ -426,9 +434,55 @@ type FKey struct {
 	apTrigger  [2]Trigger /* Triggers for aAction[] actions */
 	aCol       []struct { /* Mapping of columns in pFrom to columns in zTo */
 		iFrom int    /* Index of column in pFrom */
-		zCol  string /* Name of column in zTo.  If NULL use PRIMARY KEY */
+		zCol  []byte /* Name of column in zTo.  If NULL use PRIMARY KEY */
 	} /* One entry for each of nCol columns */
 }
+
+/*
+** SQLite supports many different ways to resolve a constraint
+** error.  ROLLBACK processing means that a constraint violation
+** causes the operation in process to fail and for the current transaction
+** to be rolled back.  ABORT processing means the operation in process
+** fails and any prior changes from that one operation are backed out,
+** but the transaction is not rolled back.  FAIL processing means that
+** the operation in progress stops and returns an error code.  But prior
+** changes due to the same operation are not backed out and no rollback
+** occurs.  IGNORE means that the particular row that caused the constraint
+** error is not inserted or updated.  Processing continues and no error
+** is returned.  REPLACE means that preexisting database rows that caused
+** a UNIQUE constraint violation are removed so that the new insert or
+** update can proceed.  Processing continues and no error is reported.
+** UPDATE applies to insert operations only and means that the insert
+** is omitted and the DO UPDATE clause of an upsert is run instead.
+**
+** RESTRICT, SETNULL, SETDFLT, and CASCADE actions apply only to foreign keys.
+** RESTRICT is the same as ABORT for IMMEDIATE foreign keys and the
+** same as ROLLBACK for DEFERRED keys.  SETNULL means that the foreign
+** key is set to NULL.  SETDFLT means that the foreign key is set
+** to its default value.  CASCADE means that a DELETE or UPDATE of the
+** referenced table row is propagated into the row that holds the
+** foreign key.
+**
+** The OE_Default value is a place holder that means to use whatever
+** conflict resolution algorthm is required from context.
+**
+** The following symbolic values are used to record which type
+** of conflict resolution action to take.
+ */
+const (
+	OE_None     = 0  /* There is no constraint to check */
+	OE_Rollback = 1  /* Fail the operation and rollback the transaction */
+	OE_Abort    = 2  /* Back out changes but do no rollback transaction */
+	OE_Fail     = 3  /* Stop the operation but leave all prior changes */
+	OE_Ignore   = 4  /* Ignore the error. Do not do the INSERT or UPDATE */
+	OE_Replace  = 5  /* Delete existing record, then do INSERT or UPDATE */
+	OE_Update   = 6  /* Process as a DO UPDATE in an upsert */
+	OE_Restrict = 7  /* OE_Abort for IMMEDIATE, OE_Rollback for DEFERRED */
+	OE_SetNull  = 8  /* Set the foreign key value to NULL */
+	OE_SetDflt  = 9  /* Set the foreign key value to its default */
+	OE_Cascade  = 10 /* Cascade the changes */
+	OE_Default  = 11 /* Do whatever the default action is */
+)
 
 /*
 ** Each SQL function is defined by an instance of the following
@@ -449,7 +503,7 @@ type FuncDef struct {
 	// void (*xFinalize)(sqlite3_context*);                  /* Agg finalizer */
 	// void (*xValue)(sqlite3_context*);                     /* Current agg value */
 	// void (*xInverse)(sqlite3_context*,int,sqlite3_value**); /* inverse agg-step */
-	zName string /* SQL name of the function. */
+	zName []byte /* SQL name of the function. */
 	u     struct {
 		pHash       *FuncDef        /* Next with a different name but the same hash */
 		pDestructor *FuncDestructor /* Reference counted destructor function */
@@ -495,9 +549,9 @@ type IdList struct {
 	nId int   /* Number of identifiers on the list */
 	eU4 uint8 /* Which element of a.u4 is valid */
 	a   []struct {
-		zName *rune /* Name of the identifier */
-		idx   int   /* Index in some Table.aCol[] of a column named zName */
-		pExpr *Expr /* Expr to implement a USING variable -- NOT USED */
+		zName []byte /* Name of the identifier */
+		idx   int    /* Index in some Table.aCol[] of a column named zName */
+		pExpr *Expr  /* Expr to implement a USING variable -- NOT USED */
 	}
 }
 
@@ -536,15 +590,15 @@ type IdList struct {
 ** program is executed). See convertToWithoutRowidTable() for details.
  */
 type Index struct {
-	zName         string    /* Name of this index */
+	zName         []byte    /* Name of this index */
 	aiColumn      *int16    /* Which columns are used by this index.  1st is 0 */
 	aiRowLogEst   *LogEst   /* From ANALYZE: Est. rows selected by each column */
 	pTable        *Table    /* The SQL table being indexed */
-	zColAff       string    /* String defining the affinity of each column */
+	zColAff       []byte    /* String defining the affinity of each column */
 	pNext         *Index    /* The next index associated with the same table */
 	pSchema       *Schema   /* Schema containing this index */
 	aSortOrder    *uint8    /* for each column: True==DESC, False==ASC */
-	azColl        []string  /* Array of collation sequence names for index */
+	azColl        []byte    /* Array of collation sequence names for index */
 	pPartIdxWhere *Expr     /* WHERE clause for partial indices */
 	aColExpr      *ExprList /* Column expressions */
 	tnum          Pgno      /* DB Page containing root of this index */
@@ -570,6 +624,16 @@ type Index struct {
 	nRowEst0    tRowcnt      /* Non-logarithmic number of rows in the index */
 	colNotIdxed Bitmask      /* 0 for unindexed columns in pTab */
 }
+
+/*
+** Allowed values for Index.idxType
+ */
+const (
+	SQLITE_IDXTYPE_APPDEF     = 0 /* Created using CREATE INDEX */
+	SQLITE_IDXTYPE_UNIQUE     = 1 /* Implements a UNIQUE constraint */
+	SQLITE_IDXTYPE_PRIMARYKEY = 2 /* Is the PRIMARY KEY for the table */
+	SQLITE_IDXTYPE_IPK        = 3 /* INTEGER PRIMARY KEY index */
+)
 
 /*
 ** Each sample stored in the sqlite_stat4 table is represented in memory
@@ -611,7 +675,7 @@ type OnOrUsing struct {
  */
 type Parse struct {
 	db      *sqlite3 /* The main database structure */
-	zErrMsg string   /* An error message */
+	zErrMsg []byte   /* An error message */
 	// Vdbe *pVdbe;         /* An engine for executing database bytecode */
 	rc               int   /* Return code from execution */
 	colNamesSet      uint8 /* TRUE after OP_ColumnName has been issued to pVdbe */
@@ -701,13 +765,13 @@ type Parse struct {
 	// // j#endif
 	//   VList *pVList;            /* Mapping between variable names and numbers */
 	//   Vdbe *pReprepare;         /* VM being reprepared (sqlite3Reprepare()) */
-	zTail     string /* All SQL text past the last semicolon parsed */
+	zTail     []byte /* All SQL text past the last semicolon parsed */
 	pNewTable *Table /* A table being constructed by CREATE TABLE */
 	pNewIndex *Index /* An index being constructed by CREATE INDEX.
 	//                             ** Also used to hold redundant UNIQUE constraints
 	//                             ** during a RENAME COLUMN */
 	pNewTrigger  *Trigger /* Trigger under construct by a CREATE TRIGGER */
-	zAuthContext string   /* The 6th parameter to db->xAuth callbacks */
+	zAuthContext []byte   /* The 6th parameter to db->xAuth callbacks */
 	// #ifndef SQLITE_OMIT_VIRTUALTABLE
 	sArg Token /* Complete text of a module argument */
 	//   Table **apVtabLock;       /* Pointer to virtual tables needing locking */
@@ -725,7 +789,7 @@ type Parse struct {
 ** OP_Savepoint instruction.
  */
 type Savepoint struct {
-	zName            string     /* Savepoint name (nul-terminated) */
+	zName            []byte     /* Savepoint name (nul-terminated) */
 	nDeferredCons    int64      /* Number of deferred fk violations */
 	nDeferredImmCons int64      /* Number of deferred imm fk. */
 	pNext            *Savepoint /* Parent savepoint (if any) */
@@ -812,6 +876,160 @@ type Select struct {
 }
 
 /*
+** Allowed values for Select.selFlags.  The "SF" prefix stands for
+** "Select Flag".
+**
+** Value constraints (all checked via assert())
+**     SF_HasAgg      == NC_HasAgg
+**     SF_MinMaxAgg   == NC_MinMaxAgg     == SQLITE_FUNC_MINMAX
+**     SF_OrderByReqd == NC_OrderAgg      == SQLITE_FUNC_ANYORDER
+**     SF_FixedLimit  == WHERE_USE_LIMIT
+ */
+const (
+	SF_Distinct      = 0x0000001 /* Output should be DISTINCT */
+	SF_All           = 0x0000002 /* Includes the ALL keyword */
+	SF_Resolved      = 0x0000004 /* Identifiers have been resolved */
+	SF_Aggregate     = 0x0000008 /* Contains agg functions or a GROUP BY */
+	SF_HasAgg        = 0x0000010 /* Contains aggregate functions */
+	SF_UsesEphemeral = 0x0000020 /* Uses the OpenEphemeral opcode */
+	SF_Expanded      = 0x0000040 /* sqlite3SelectExpand() called on this */
+	SF_HasTypeInfo   = 0x0000080 /* FROM subqueries have Table metadata */
+	SF_Compound      = 0x0000100 /* Part of a compound query */
+	SF_Values        = 0x0000200 /* Synthesized from VALUES clause */
+	SF_MultiValue    = 0x0000400 /* Single VALUES term with multiple rows */
+	SF_NestedFrom    = 0x0000800 /* Part of a parenthesized FROM clause */
+	SF_MinMaxAgg     = 0x0001000 /* Aggregate containing min() or max() */
+	SF_Recursive     = 0x0002000 /* The recursive part of a recursive CTE */
+	SF_FixedLimit    = 0x0004000 /* nSelectRow set by a constant LIMIT */
+	SF_MaybeConvert  = 0x0008000 /* Need convertCompoundSelectToSubquery() */
+	SF_Converted     = 0x0010000 /* By convertCompoundSelectToSubquery() */
+	SF_IncludeHidden = 0x0020000 /* Include hidden columns in output */
+	SF_ComplexResult = 0x0040000 /* Result contains subquery or function */
+	SF_WhereBegin    = 0x0080000 /* Really a WhereBegin() call.  Debug Only */
+	SF_WinRewrite    = 0x0100000 /* Window function rewrite accomplished */
+	SF_View          = 0x0200000 /* SELECT statement is a view */
+	SF_NoopOrderBy   = 0x0400000 /* ORDER BY is ignored for this query */
+	SF_UFSrcCheck    = 0x0800000 /* Check pSrc as required by UPDATE...FROM */
+	SF_PushDown      = 0x1000000 /* SELECT has be modified by push-down opt */
+	SF_MultiPart     = 0x2000000 /* Has multiple incompatible PARTITIONs */
+	SF_CopyCte       = 0x4000000 /* SELECT statement is a copy of a CTE */
+	SF_OrderByReqd   = 0x8000000 /* The ORDER BY clause may not be omitted */
+)
+
+/* True if S exists and has SF_NestedFrom */
+// #define IsNestedFrom(S) ((S)!=0 && ((S)->selFlags&SF_NestedFrom)!=0)
+
+/*
+** The results of a SELECT can be distributed in several ways, as defined
+** by one of the following macros.  The "SRT" prefix means "SELECT Result
+** Type".
+**
+**     SRT_Union       Store results as a key in a temporary index
+**                     identified by pDest->iSDParm.
+**
+**     SRT_Except      Remove results from the temporary index pDest->iSDParm.
+**
+**     SRT_Exists      Store a 1 in memory cell pDest->iSDParm if the result
+**                     set is not empty.
+**
+**     SRT_Discard     Throw the results away.  This is used by SELECT
+**                     statements within triggers whose only purpose is
+**                     the side-effects of functions.
+**
+**     SRT_Output      Generate a row of output (using the OP_ResultRow
+**                     opcode) for each row in the result set.
+**
+**     SRT_Mem         Only valid if the result is a single column.
+**                     Store the first column of the first result row
+**                     in register pDest->iSDParm then abandon the rest
+**                     of the query.  This destination implies "LIMIT 1".
+**
+**     SRT_Set         The result must be a single column.  Store each
+**                     row of result as the key in table pDest->iSDParm.
+**                     Apply the affinity pDest->affSdst before storing
+**                     results.  Used to implement "IN (SELECT ...)".
+**
+**     SRT_EphemTab    Create an temporary table pDest->iSDParm and store
+**                     the result there. The cursor is left open after
+**                     returning.  This is like SRT_Table except that
+**                     this destination uses OP_OpenEphemeral to create
+**                     the table first.
+**
+**     SRT_Coroutine   Generate a co-routine that returns a new row of
+**                     results each time it is invoked.  The entry point
+**                     of the co-routine is stored in register pDest->iSDParm
+**                     and the result row is stored in pDest->nDest registers
+**                     starting with pDest->iSdst.
+**
+**     SRT_Table       Store results in temporary table pDest->iSDParm.
+**     SRT_Fifo        This is like SRT_EphemTab except that the table
+**                     is assumed to already be open.  SRT_Fifo has
+**                     the additional property of being able to ignore
+**                     the ORDER BY clause.
+**
+**     SRT_DistFifo    Store results in a temporary table pDest->iSDParm.
+**                     But also use temporary table pDest->iSDParm+1 as
+**                     a record of all prior results and ignore any duplicate
+**                     rows.  Name means:  "Distinct Fifo".
+**
+**     SRT_Queue       Store results in priority queue pDest->iSDParm (really
+**                     an index).  Append a sequence number so that all entries
+**                     are distinct.
+**
+**     SRT_DistQueue   Store results in priority queue pDest->iSDParm only if
+**                     the same record has never been stored before.  The
+**                     index at pDest->iSDParm+1 hold all prior stores.
+**
+**     SRT_Upfrom      Store results in the temporary table already opened by
+**                     pDest->iSDParm. If (pDest->iSDParm<0), then the temp
+**                     table is an intkey table - in this case the first
+**                     column returned by the SELECT is used as the integer
+**                     key. If (pDest->iSDParm>0), then the table is an index
+**                     table. (pDest->iSDParm) is the number of key columns in
+**                     each index record in this case.
+ */
+const (
+	SRT_Union     = 1 /* Store result as keys in an index */
+	SRT_Except    = 2 /* Remove result from a UNION index */
+	SRT_Exists    = 3 /* Store 1 if the result is not empty */
+	SRT_Discard   = 4 /* Do not save the results anywhere */
+	SRT_DistFifo  = 5 /* Like SRT_Fifo, but unique results only */
+	SRT_DistQueue = 6 /* Like SRT_Queue, but unique results only */
+
+	/* The DISTINCT clause is ignored for all of the above.  Not that
+	 ** IgnorableDistinct() implies IgnorableOrderby() */
+	// #define IgnorableDistinct(X) ((X->eDest)<=SRT_DistQueue)
+
+	SRT_Queue = 7 /* Store result in an queue */
+	SRT_Fifo  = 8 /* Store result as data with an automatic rowid */
+
+	/* The ORDER BY clause is ignored for all of the above */
+	// #define IgnorableOrderby(X) ((X->eDest)<=SRT_Fifo)
+
+	SRT_Output    = 9  /* Output each row of result */
+	SRT_Mem       = 10 /* Store result in a memory cell */
+	SRT_Set       = 11 /* Store results as keys in an index */
+	SRT_EphemTab  = 12 /* Create transient tab and store like SRT_Table */
+	SRT_Coroutine = 13 /* Generate a single row of result */
+	SRT_Table     = 14 /* Store result as data with an automatic rowid */
+	SRT_Upfrom    = 15 /* Store result as data with rowid */
+)
+
+/*
+** An instance of this object describes where to put of the results of
+** a SELECT statement.
+ */
+type SelectDest struct {
+	eDest    uint8     /* How to dispose of the results.  One of SRT_* above. */
+	iSDParm  int       /* A parameter used by the eDest disposal method */
+	iSDParm2 int       /* A second parameter for the eDest disposal method */
+	iSdst    int       /* Base register where results are written */
+	nSdst    int       /* Number of registers allocated */
+	zAffSdst []byte    /* Affinity used when eDest==SRT_Set */
+	pOrderBy *ExprList /* Key columns for SRT_Queue and SRT_DistQueue */
+}
+
+/*
 ** The SrcItem object represents a single term in the FROM clause of a query.
 ** The SrcList object is mostly an array of SrcItems.
 **
@@ -824,9 +1042,9 @@ type Select struct {
  */
 type SrcItem struct {
 	pSchema     *Schema /* Schema to which this item is fixed */
-	zDatabase   string  /* Name of database holding this table */
-	zName       string  /* Name of the table */
-	zAlias      string  /* The "B" part of a "A AS B" phrase.  zName is the "A" */
+	zDatabase   []byte  /* Name of database holding this table */
+	zName       []byte  /* Name of the table */
+	zAlias      []byte  /* The "B" part of a "A AS B" phrase.  zName is the "A" */
 	pTab        *Table  /* An SQL table corresponding to zName */
 	pSelect     *Select /* A SELECT statement used in place of a table name */
 	addrFillSub int     /* Address of subroutine to manifest a subquery */
@@ -854,7 +1072,7 @@ type SrcItem struct {
 	}
 	colUsed Bitmask /* Bit N (1<<N) set if column N of pTab is used */
 	u1      struct {
-		zIndexedBy string    /* Identifier from "INDEXED BY <zIndex>" clause */
+		zIndexedBy []byte    /* Identifier from "INDEXED BY <zIndex>" clause */
 		pFuncArg   *ExprList /* Arguments to table-valued-function */
 	}
 	u2 struct {
@@ -893,10 +1111,10 @@ type SrcList struct {
 ** in memory by an instance of the following structure.
  */
 type Table struct {
-	zName   string    /* Name of the table or view */
+	zName   []byte    /* Name of the table or view */
 	aCol    *Column   /* Information about each column */
 	pIndex  *Index    /* List of SQL indexes on this table. */
-	zColAff string    /* String defining the affinity of each column */
+	zColAff []byte    /* String defining the affinity of each column */
 	pCheck  *ExprList /* All CHECK constraints */
 	/*   ... also used as column name list in a VIEW */
 	tnum       Pgno   /* Root BTree page for this table */
@@ -941,7 +1159,7 @@ type Table struct {
 ** static string.
  */
 type Token struct {
-	z string /* Text of the token.  Not NULL-terminated! */
+	z []byte /* Text of the token.  Not NULL-terminated! */
 	n uint   /* Number of characters in this token */
 }
 
@@ -961,8 +1179,8 @@ type Token struct {
 ** containing the SQL statements specified as the trigger program.
  */
 type Trigger struct {
-	zName      string  /* The name of the trigger                        */
-	table      string  /* The table or view to which the trigger applies */
+	zName      []byte  /* The name of the trigger                        */
+	table      []byte  /* The table or view to which the trigger applies */
 	op         uint8   /* One of TK_DELETE, TK_UPDATE, TK_INSERT         */
 	tr_tm      uint8   /* One of TRIGGER_BEFORE, TRIGGER_AFTER */
 	bReturning uint8   /* This trigger implements a RETURNING clause */
@@ -1024,13 +1242,13 @@ type TriggerStep struct {
 	orconf    uint8        /* OE_Rollback etc. */
 	pTrig     *Trigger     /* The trigger that this step is a part of */
 	pSelect   *Select      /* SELECT statement or RHS of INSERT INTO SELECT ... */
-	zTarget   string       /* Target table for DELETE, UPDATE, INSERT */
+	zTarget   []byte       /* Target table for DELETE, UPDATE, INSERT */
 	pFrom     *SrcList     /* FROM clause for UPDATE statement (if any) */
 	pWhere    *Expr        /* The WHERE clause for DELETE or UPDATE steps */
 	pExprList *ExprList    /* SET clause for UPDATE, or RETURNING clause */
 	pIdList   *IdList      /* Column names for INSERT */
 	pUpsert   *Upsert      /* Upsert clauses on an INSERT */
-	zSpan     string       /* Original SQL text of this command */
+	zSpan     []byte       /* Original SQL text of this command */
 	pNext     *TriggerStep /* Next in the link-list */
 	pLast     *TriggerStep /* Last element in link-list. Valid for 1st elem only */
 }
@@ -1148,8 +1366,8 @@ type VTable struct {
 ** to be accessible in two different ways.  Use case (3) are separate objects.
  */
 type Window struct {
-	zName          string    /* Name of window (may be NULL) */
-	zBase          string    /* Name of base window for chaining (may be NULL) */
+	zName          []byte    /* Name of window (may be NULL) */
+	zBase          []byte    /* Name of base window for chaining (may be NULL) */
 	pPartition     *ExprList /* PARTITION BY clause */
 	pOrderBy       *ExprList /* ORDER BY clause */
 	eFrmType       uint8     /* TK_RANGE, TK_GROUPS, TK_ROWS, or 0 */
@@ -1237,7 +1455,7 @@ type sqlite3 struct {
 		// unsigned orphanTrigger : 1; /* Last statement is orphaned TEMP trigger */
 		// unsigned imposterTable : 1; /* Building an imposter table */
 		// unsigned reopenMemdb : 1;   /* ATTACH is really a reopen using MemDB */
-		azInit string /* "type", "name", and "tbl_name" columns */
+		azInit []byte /* "type", "name", and "tbl_name" columns */
 	}
 	//   int nVdbeActive;              /* Number of VDBEs currently running */
 	//   int nVdbeRead;                /* Number of active VDBEs that read or write */
