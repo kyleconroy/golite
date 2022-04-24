@@ -5,3 +5,4 @@ build: parse.go
 
 parse.go: parse.y
 	./golemon parse.y
+	go fmt parse.go
